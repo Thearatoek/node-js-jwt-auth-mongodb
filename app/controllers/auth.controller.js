@@ -63,21 +63,22 @@ exports.signup = (req, res) => {
 };
 
 exports.signin = (req, res) => {
+  // Find user by email instead of username
   User.findOne({
-    username: req.body.username
+    email: req.body.email
   })
     .populate("roles", "-__v")
     .exec((err, user) => {
       if (err) {
-        res.status(500).send({ message: err });
-        return;
+        return res.status(500).send({ message: err });
       }
 
       if (!user) {
         return res.status(404).send({ message: "User Not found." });
       }
 
-      var passwordIsValid = bcrypt.compareSync(
+      // Check password
+      const passwordIsValid = bcrypt.compareSync(
         req.body.password,
         user.password
       );
@@ -89,19 +90,23 @@ exports.signin = (req, res) => {
         });
       }
 
-      const token = jwt.sign({ id: user.id },
-                              config.secret,
-                              {
-                                algorithm: 'HS256',
-                                allowInsecureKeySizes: true,
-                                expiresIn: 86400, // 24 hours
-                              });
+      // Generate JWT token
+      const token = jwt.sign(
+        { id: user._id },
+        config.secret,
+        {
+          algorithm: 'HS256',
+          allowInsecureKeySizes: true,
+          expiresIn: 86400, // 24 hours
+        }
+      );
 
-      var authorities = [];
+      // Collect roles
+      const authorities = user.roles.map(
+        role => "ROLE_" + role.name.toUpperCase()
+      );
 
-      for (let i = 0; i < user.roles.length; i++) {
-        authorities.push("ROLE_" + user.roles[i].name.toUpperCase());
-      }
+      // Send response
       res.status(200).send({
         id: user._id,
         username: user.username,
