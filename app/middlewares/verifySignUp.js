@@ -3,32 +3,37 @@ const ROLES = db.ROLES;
 const User = db.user;
 
 checkDuplicateUsernameOrEmail = (req, res, next) => {
-  // Username
-  User.findOne({
-    username: req.body.username
-  }).exec((err, user) => {
+  // Check Username
+  User.findOne({ username: req.body.username }).exec((err, user) => {
     if (err) {
-      res.status(500).send({ message: err });
-      return;
+      return res.status(500).json({
+        message: "Internal server error",
+        code: "SERVER_ERROR",
+        description: err.message || err
+      });
     }
-
     if (user) {
-      res.status(400).send({ message: "Failed! Username is already in use!" });
-      return;
+      return res.status(409).json({
+        message: "Username already exists",
+        code: "USERNAME_DUPLICATE",
+        description: "The username you provided is already in use. Please choose another one."
+      });
     }
-
-    // Email
-    User.findOne({
-      email: req.body.email
-    }).exec((err, user) => {
+    // Check Email
+    User.findOne({ email: req.body.email }).exec((err, user) => {
       if (err) {
-        res.status(500).send({ message: err });
-        return;
+        return res.status(500).json({
+          message: "Internal server error",
+          code: "SERVER_ERROR",
+          description: err.message || err
+        });
       }
-
       if (user) {
-        res.status(400).send({ message: "Failed! Email is already in use!" });
-        return;
+        return res.status(409).json({
+          message: "Email already exists",
+          code: "EMAIL_DUPLICATE",
+          description: "The email address you provided is already registered. Please use another email."
+        });
       }
 
       next();
@@ -47,7 +52,6 @@ checkRolesExisted = (req, res, next) => {
       }
     }
   }
-
   next();
 };
 

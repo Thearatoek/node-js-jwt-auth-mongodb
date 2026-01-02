@@ -6,113 +6,146 @@ const Role = db.role;
 var jwt = require("jsonwebtoken");
 var bcrypt = require("bcryptjs");
 
-exports.signup = (req, res) => {
-  const user = new User({
-    username: req.body.username,
-    email: req.body.email,
-    password: bcrypt.hashSync(req.body.password, 8)
-  });
 
-  user.save((err, user) => {
-    if (err) {
-      res.status(500).send({ message: err });
-      return;
-    }
+// Signin controller
+exports.signin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-    if (req.body.roles) {
-      Role.find(
-        {
-          name: { $in: req.body.roles }
-        },
-        (err, roles) => {
-          if (err) {
-            res.status(500).send({ message: err });
-            return;
-          }
-
-          user.roles = roles.map(role => role._id);
-          user.save(err => {
-            if (err) {
-              res.status(500).send({ message: err });
-              return;
-            }
-
-            res.send({ message: "User was registered successfully!" });
-          });
-        }
-      );
-    } else {
-      Role.findOne({ name: "user" }, (err, role) => {
-        if (err) {
-          res.status(500).send({ message: err });
-          return;
-        }
-
-        user.roles = [role._id];
-        user.save(err => {
-          if (err) {
-            res.status(500).send({ message: err });
-            return;
-          }
-
-          res.send({ message: "User was registered successfully!" });
-        });
+    if (!email || !password) {
+      return res.status(400).send({
+        message: "Email and password are required"
       });
     }
-  });
+
+    // Find user with password field included
+    const user = await User.findOne({ email })
+      .select('+password')
+      .populate('roles');
+
+    if (!user) {
+      return res.status(404).send({
+        message: "User not found"
+      });
+    }
+
+    // Check if account is locked
+    if (user.lockUntil && user.lockUntil > Date.now()) {
+      return res.status(423).send({
+        message: "Account is locked. Please try again later."
+      });
+    }
+
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(403).send({
+        message: "Account is deactivated"
+      });
+    }
+
+    // Check password
+    const passwordIsValid = await bcrypt.compare(password, user.password);
+
+    if (!passwordIsValid) {
+      // Increment login attempts
+      await user.incLoginAttempts();
+
+      return res.status(401).send({
+        message: "Invalid password!"
+      });
+    }
+
+    // Reset login attempts on successful login
+    await user.resetLoginAttempts();
+
+    // Generate token
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      config.secret,
+      { expiresIn: '24h' }
+    );
+
+    const authorities = user.roles.map(
+      role => "ROLE_" + role.name.toUpperCase()
+    );
+
+    res.status(200).send({
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      roles: authorities,
+      isEmailVerified: user.isEmailVerified,
+      accessToken: token
+    });
+
+  } catch (err) {
+    res.status(500).send({
+      message: err.message || "Error occurred during signin"
+    });
+  }
 };
 
-exports.signin = (req, res) => {
-  // Find user by email instead of username
-  User.findOne({
-    email: req.body.email
-  })
-    .populate("roles", "-__v")
-    .exec((err, user) => {
-      if (err) {
-        return res.status(500).send({ message: err });
-      }
+// Signup controller
+exports.signup = async (req, res) => {
+  try {
+    const { username, email, password, roles } = req.body;
 
-      if (!user) {
-        return res.status(404).send({ message: "User Not found." });
-      }
-
-      // Check password
-      const passwordIsValid = bcrypt.compareSync(
-        req.body.password,
-        user.password
-      );
-
-      if (!passwordIsValid) {
-        return res.status(401).send({
-          accessToken: null,
-          message: "Invalid Password!"
-        });
-      }
-
-      // Generate JWT token
-      const token = jwt.sign(
-        { id: user._id },
-        config.secret,
-        {
-          algorithm: 'HS256',
-          allowInsecureKeySizes: true,
-          expiresIn: 86400, // 24 hours
-        }
-      );
-
-      // Collect roles
-      const authorities = user.roles.map(
-        role => "ROLE_" + role.name.toUpperCase()
-      );
-
-      // Send response
-      res.status(200).send({
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        roles: authorities,
-        accessToken: token
-      });
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }]
     });
+
+    if (existingUser) {
+      return res.status(400).send({
+        message: existingUser.email === email
+          ? "Email already in use"
+          : "Username already taken"
+      });
+    }
+
+    // Create user
+    const user = new User({
+      username,
+      email,
+      password: bcrypt.hashSync(password, 10) // Use 10 rounds instead of 8
+    });
+
+    await user.save();
+
+    // Assign roles
+    if (roles && roles.length > 0) {
+      const foundRoles = await Role.find({
+        name: { $in: roles }
+      });
+
+      user.roles = foundRoles.map(role => role._id);
+    } else {
+      const defaultRole = await Role.findOne({ name: "user" });
+      user.roles = [defaultRole._id];
+    }
+
+    const savedUser = await user.save();
+
+    res.status(201).send({
+      message: "User registered successfully!",
+      user: {
+        id: savedUser._id,
+        username: savedUser.username,
+        email: savedUser.email,
+        isActive: savedUser.isActive,
+        createdAt: savedUser.createdAt
+      }
+    });
+
+  } catch (err) {
+    // Handle validation errors
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(e => e.message);
+      return res.status(400).send({ message: errors.join(', ') });
+    }
+
+    res.status(500).send({
+      message: err.message || "Error occurred while registering user"
+    });
+  }
 };
