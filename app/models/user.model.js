@@ -44,12 +44,12 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+
   imageUrl: {
     type: String,
-    default: 'https://png.pngtree.com/png-vector/20231019/ourmid/pngtree-user-profile-avatar-png-image_10211467.png', // Default placeholder image
+    default: 'https://png.pngtree.com/png-vector/20231019/ourmid/pngtree-user-profile-avatar-png-image_10211467.png',
     validate: {
       validator: function (v) {
-        // Validate URL format
         return /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|svg)$/i.test(v) || v === null;
       },
       message: 'Please provide a valid image URL'
@@ -66,6 +66,14 @@ const userSchema = new mongoose.Schema({
   },
 
   lockUntil: {
+    type: Date
+  },
+
+  resetPasswordToken: {
+    type: String
+  },
+
+  resetPasswordExpires: {
     type: Date
   }
 
@@ -109,26 +117,16 @@ userSchema.methods.resetLoginAttempts = function () {
   });
 };
 
-// Static methods
 userSchema.statics.findByCredentials = async function (email, password) {
   const user = await this.findOne({ email }).select('+password').populate('roles');
 
-  if (!user) {
-    throw new Error('Invalid credentials');
-  }
-
-  if (user.isLocked) {
-    throw new Error('Account is locked. Please try again later.');
-  }
-
-  if (!user.isActive) {
-    throw new Error('Account is deactivated');
-  }
+  if (!user) throw new Error('Invalid credentials');
+  if (user.isLocked) throw new Error('Account is locked. Please try again later.');
+  if (!user.isActive) throw new Error('Account is deactivated');
 
   return user;
 };
 
 // Create and export model
 const User = mongoose.model("User", userSchema);
-
 module.exports = User;

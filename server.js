@@ -13,6 +13,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+
 const db = require("./app/models");
 const Role = db.role;
 
@@ -39,6 +40,7 @@ app.get("/", (req, res) => {
 // routes
 require("./app/routes/auth.routes")(app);
 require("./app/routes/user.routes")(app);
+
 
 // set port
 const PORT = process.env.PORT || 8080;

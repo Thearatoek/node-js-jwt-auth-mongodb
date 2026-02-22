@@ -1,5 +1,6 @@
 const { verifySignUp } = require("../middlewares");
 const controller = require("../controllers/auth.controller");
+const { validateSignup, validateForgotPassword, validateResetPassword } = require("../middlewares/validate"); // 👈 fixed path
 
 module.exports = function (app) {
   app.use(function (req, res, next) {
@@ -12,12 +13,12 @@ module.exports = function (app) {
 
   app.post(
     "/api/auth/signup",
-    [
-      verifySignUp.checkDuplicateUsernameOrEmail,
-      verifySignUp.checkRolesExisted
-    ],
+    [verifySignUp.checkDuplicateUsernameOrEmail, verifySignUp.checkRolesExisted, validateSignup],
     controller.signup
   );
 
   app.post("/api/auth/signin", controller.signin);
+
+  app.post("/api/auth/forgot-password", validateForgotPassword, controller.forgotPassword);
+  app.post("/api/auth/reset-password/:token", validateResetPassword, controller.resetPassword);
 };
